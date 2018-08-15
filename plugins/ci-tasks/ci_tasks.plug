@@ -1,0 +1,10 @@
+[Core]
+name = CI tasks
+module = ci_tasks
+
+[Documentation]
+description = CI related tasks and scripts
+
+[Python]
+version = 3
+
