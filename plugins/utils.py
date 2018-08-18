@@ -2,6 +2,7 @@ import datetime
 import json
 import re
 import requests
+from errbot.templating import tenv
 
 date_re = re.compile('(20\d\d-\d\d-\d\d \d\d:\d\d)')
 
@@ -38,9 +39,9 @@ def get_patch_status(patch):
                         data = j['heads'][0][patches.index(patch)]
                         data['used_pipeline'] = i['name']
     if not data:
-        return "Patch %s is not in CI. " % patch + gerrit_status(patch)
+        return gerrit_status(patch)
     if not data['jobs']:
-        return "Patch %s is in CI, but no jobs are enqueued for it."
+        return "Patch %s is in CI, but no jobs are enqueued for it." % patch
     msg = 'Patch is in CI pipeline "%s". ' % data['used_pipeline']
     if data['jobs']:
         if set([i['start_time'] for i in data['jobs']]) == {None}:
@@ -115,30 +116,25 @@ def gerrit_status(patch):
                     return value
         return
 
-    def colorizev(x):
-        return 'red' if x <0 else 'green'
+    def generate_response(res):
+        return tenv().get_template('gerrit_result.md').render(args=res)
 
-    msg = "Last result in Gerrit:"
-    not_found = ' unknown.'
-
+    res = {'patch': patch}
     web = requests.get(ZUUL_UP['gerrit'].format(patch))
     if web is not None and web.ok:
         try:
             d = json.loads(web.content[4:])
         except Exception as e:
-            return msg + not_found
+            return generate_response(res)
     else:
-        return msg + not_found
+        return generate_response(res)
     zuul = get_zuul_status(d)
     rdo = get_rdo_status(d)
     if zuul:
-        msg += " `Zuul: %+d`{:color='%s'}" % (zuul, colorizev(zuul))
+        res.update({'zuul': zuul})
     if rdo:
-        msg += " `RDO 3party: %+d`{:color='%s'}" % (rdo, colorizev(rdo))
-    if not rdo and not zuul:
-        msg += not_found
-    return msg
-
+        res.update({'rdo': rdo})
+    return generate_response(res)
 
 def get_promotion_status(branch):
 
