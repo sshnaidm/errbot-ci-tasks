@@ -4,7 +4,18 @@ import re
 import requests
 from errbot.templating import tenv
 
-date_re = re.compile('(20\d\d-\d\d-\d\d \d\d:\d\d)')
+
+BRANCHES = [
+    'master',
+    # 'stein',
+    'rocky',
+    'queens',
+    'pike',
+    # 'ocata',
+]
+
+
+date_re = re.compile(r'(20\d\d-\d\d-\d\d \d\d:\d\d)')
 
 ZUUL_UP = {
     "url": "http://zuul.openstack.org/status",
@@ -20,12 +31,27 @@ REPO_URL = {
      "current-tripleo-rdo-internal/"): 'phase2',
 }
 
+
+def validate_patch(patch_number):
+    if "http" not in patch_number and not patch_number.isdigit():
+        return False, "Patch should be either gerrit link or number"
+    elif "http" in patch_number:
+        patch = patch_number.strip("/").split("/")[-1]
+        if not patch.isdigit():
+            return False, "Patch number contains non-digits"
+    else:
+        patch = patch_number
+    if len(patch) > 10:
+        return False, "Patch length should be less than 20"
+    return True, patch
+
+
 def get_patch_status(patch):
     web = requests.get(ZUUL_UP['url'])
     if web is not None and web.ok:
         try:
             d = web.json()
-        except Exception as e:
+        except Exception:
             return "Failed to query Zuul"
     else:
         return "Failed to query Zuul"
@@ -51,7 +77,8 @@ def get_patch_status(patch):
             # fails = [i['result'] for i in data['jobs']
             #          if i['result'] != "SUCCESS"]
             check_fails = [i['result'] for i in data['jobs']
-                     if i['result'] != "SUCCESS" and i.get('voting', True)]
+                           if i['result'] != "SUCCESS" and
+                           i.get('voting', True)]
             if check_fails:
                 msg += "{} job(s) failed from {} :(.".format(
                     len(check_fails), len(data['jobs'])
@@ -72,7 +99,8 @@ def get_patch_status(patch):
             passed = [i['result'] for i in data['jobs']
                       if i['result'] == 'SUCCESS']
             all_failed = [i['result'] for i in data['jobs']
-                     if i['result'] != "SUCCESS" and i['result'] is not None]
+                          if i['result'] != "SUCCESS" and
+                          i['result'] is not None]
             percents = [100 * i['elapsed_time'] / (
                     i['elapsed_time'] + i['remaining_time']
             ) for i in data['jobs'] if i['start_time'] is not None and
@@ -124,7 +152,7 @@ def gerrit_status(patch):
     if web is not None and web.ok:
         try:
             d = json.loads(web.content[4:])
-        except Exception as e:
+        except Exception:
             return generate_response(res)
     else:
         return generate_response(res)
@@ -135,6 +163,7 @@ def gerrit_status(patch):
     if rdo:
         res.update({'rdo': rdo})
     return generate_response(res)
+
 
 def get_promotion_status(branch):
 
@@ -150,33 +179,31 @@ def get_promotion_status(branch):
     def calculate_diff(t):
         return (datetime.datetime.utcnow() - t).days
 
-
-    res = {
-        'consistent': '-',
-        'tripleoci': '-',
-        'phase1': '-',
-        'phase2': '-'
-    }
-    for repo_url in REPO_URL:
-        url = repo_url.format(branch)
-        web = requests.get(url)
-        if web is None or not web.ok:
-            continue
-        date = get_date(web.text)
-        if not date:
-            continue
-        days = calculate_diff(date)
-        if not days:
-            continue
-        key = REPO_URL[repo_url]
-        res[key] = "{}d".format(days)
-    msg = ("`%s`{:color='green'}: "
-           "consistent: %s, tripleoci: %s, p1: %s, p2: %s") % (
-              branch.capitalize(),
-              res['consistent'],
-              res['tripleoci'],
-              res['phase1'],
-              res['phase2']
-          )
-    return msg
-
+    if branch == 'all':
+        branches = BRANCHES
+    else:
+        branches = [branch]
+    br_list = []
+    for b in branches:
+        res = {
+            'name': b,
+            'consistent': 'N/A',
+            'tripleoci': 'N/A',
+            'phase1': 'N/A',
+            'phase2': 'N/A'
+        }
+        for repo_url in REPO_URL:
+            url = repo_url.format(b)
+            web = requests.get(url)
+            if web is None or not web.ok:
+                continue
+            date = get_date(web.text)
+            if not date:
+                continue
+            days = calculate_diff(date)
+            if not days:
+                continue
+            key = REPO_URL[repo_url]
+            res[key] = days
+        br_list.append(res)
+    return tenv().get_template('promotion_status.md').render(branches=br_list)
