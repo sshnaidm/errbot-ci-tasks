@@ -201,8 +201,6 @@ def get_promotion_status(branch):
             if not date:
                 continue
             days = calculate_diff(date)
-            if not days:
-                continue
             key = REPO_URL[repo_url]
             res[key] = days
         br_list.append(res)

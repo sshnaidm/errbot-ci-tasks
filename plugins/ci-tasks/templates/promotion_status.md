@@ -1,3 +1,4 @@
+
 {% for branch in branches %}
 **{{ branch.name|capitalize }}**:  `consistent - {{ branch.consistent }}{%- if branch.consistent != "N/A" -%}d
 {%- endif %}`{:color='{%- if branch.consistent == "N/A" or branch.consistent > 5 -%}red
